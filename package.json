@@ -1,6 +1,6 @@
 {
   "name": "oxlint-plugin-graphql-eslint",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Run @graphql-eslint/eslint-plugin rules on oxlint",
   "keywords": [
     "oxlint",
