@@ -6,6 +6,8 @@ import type { GqlNode, ParseError, ParsedDocument, ParserServices } from "./type
 
 const MAX_CACHE_ENTRIES = 8;
 
+export const CACHE_MODE_ENV = "OXLINT_GRAPHQL_ESLINT_CACHE";
+
 type CacheEntry = { code: string; schemaSdl: string | undefined; documents: ParsedDocument[] };
 
 const cache = new Map<string, CacheEntry>();
@@ -45,7 +47,7 @@ export function parseDocuments(options: {
         options.schemaSdl === undefined
           ? { filePath: document.filePath }
           : { filePath: document.filePath, schemaSdl: options.schemaSdl };
-      const result = parseForESLintDefeatingNodeCacheBypass(document.text, parserOptions) as unknown as {
+      const result = parseForESLintWithCacheMode(document.text, parserOptions) as unknown as {
         ast: GqlNode;
         services: ParserServices;
       };
@@ -68,39 +70,62 @@ export function parseDocuments(options: {
 }
 
 /**
- * Workaround for `@graphql-eslint/eslint-plugin@4.4.1`'s `esm/cache.js` (`ModuleCache.get`):
+ * Chooses how long `@graphql-eslint/eslint-plugin@4.4.1` keeps the schema and sibling operations
+ * it loads from graphql-config. Both go through `esm/cache.js`'s `ModuleCache.get`:
  *
  *   if (process.env.NODE || process.hrtime(lastSeen)[0] < settings.lifetime) return result;
  *
- * This gates the plugin's schema cache's 10-second TTL behind `process.env.NODE` — almost
- * certainly an upstream typo for `NODE_ENV` (compare the correct `process.env.NODE_ENV` checks
- * elsewhere in the same package, e.g. graphql-config.js). Whenever `NODE` is set to any truthy
- * string, the `||` short-circuits and the schema cache never expires, for the life of the
- * process. `pnpm run <script>`/`pnpm exec` always set a bare `NODE` env var to the node binary
- * path, so a language server launched that way (a very common launch path in a pnpm-managed
- * project) would never see a schema-content edit — regardless of invalidateIfConfigChanged
- * clearing THIS package's own cache — until the process restarts. Verified directly: see
- * tests/adapter/config-watch.test.ts's "re-reads the schema ... with NODE set" test and Task
- * 11's report.
+ * Each entry expires 10 seconds after it was loaded, unless `process.env.NODE` (almost certainly
+ * an upstream typo for `NODE_ENV`) is set to any truthy string, in which case it never expires.
+ * `pnpm run <script>`/`pnpm exec` always set `NODE`, so the outcome would otherwise depend on how
+ * oxlint happened to be launched. Instead it is pinned per mode:
  *
- * `parseForESLint` is synchronous, so it's safe to save, delete, and restore `process.env.NODE`
- * around just this one call: nothing else in the process can observe the mutation mid-call, and
- * the `finally` guarantees restoration even if `parseForESLint` throws.
+ * - `persistent` (the one-shot CLI): `NODE` is forced truthy, so the schema and the whole
+ *   `documents` glob are loaded once per process. Re-loading them every 10 seconds bought
+ *   nothing in a run that never sees an edit, and on a large project each reload of the
+ *   operations alone took seconds.
+ * - `ttl` (the language server, `oxlint --lsp`): `NODE` is deleted, so the 10-second expiry is
+ *   what lets schema and sibling-operation edits reach a long-lived process. See
+ *   config-watch.ts's doc comment.
  *
- * Delete this workaround if upstream fixes the typo (i.e. once `esm/cache.js` no longer checks
- * `process.env.NODE`).
+ * The plugin cannot own this invalidation itself: `ModuleCache` is module-private upstream, and
+ * config-watch.ts's fingerprint covers the config and schema files but not the `documents`
+ * glob, so it could not tell when siblings need reloading.
+ *
+ * The mode comes from `process.argv`: JS plugins run in the same Node process as the `oxlint`
+ * bin, which itself switches on `args.includes("--lsp")` (oxlint/dist/cli.js). `CACHE_MODE_ENV`
+ * overrides it for launchers that don't pass `--lsp` through.
+ *
+ * `parseForESLint` is synchronous, so swapping `process.env.NODE` around just this call cannot be
+ * observed by anything else, and `finally` restores it even if the call throws. Delete this once
+ * upstream stops checking `process.env.NODE` (persistent mode would then need another route).
  */
-function parseForESLintDefeatingNodeCacheBypass(
+function parseForESLintWithCacheMode(
   ...args: Parameters<typeof parseForESLint>
 ): ReturnType<typeof parseForESLint> {
+  const persistent = cacheMode() === "persistent";
   const hadNode = Object.hasOwn(process.env, "NODE");
   const savedNode = process.env.NODE;
-  delete process.env.NODE;
+  if (persistent) {
+    if (!savedNode) process.env.NODE = process.execPath;
+  } else {
+    delete process.env.NODE;
+  }
   try {
     return parseForESLint(...args);
   } finally {
     if (hadNode) process.env.NODE = savedNode;
+    else delete process.env.NODE;
   }
+}
+
+function cacheMode(): "persistent" | "ttl" {
+  const override = process.env[CACHE_MODE_ENV];
+  if (override === "persistent" || override === "ttl") return override;
+  if (override) {
+    throw new Error(`${CACHE_MODE_ENV} must be "persistent" or "ttl", got ${JSON.stringify(override)}`);
+  }
+  return process.argv.includes("--lsp") ? "ttl" : "persistent";
 }
 
 function toParseError(error: unknown): ParseError {

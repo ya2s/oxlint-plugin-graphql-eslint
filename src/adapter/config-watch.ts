@@ -5,7 +5,7 @@
  *
  * This is what makes editor support (the oxc language server, `oxlint --lsp`) work at all for a
  * long-lived process instead of just the one-shot CLI. The real, current situation, combined
- * with the workaround in parse.ts's `parseForESLintDefeatingNodeCacheBypass`:
+ * with parse.ts's `parseForESLintWithCacheMode` in its language-server (`ttl`) mode:
  *
  * 1. Editing the CONTENT of an already-configured schema file (same path, new text) does NOT
  *    need a language server restart. This module's cache-clear (via the fingerprint below) lets
@@ -21,10 +21,14 @@
  *    <script>`/`pnpm exec` -- a common way to launch a language server in a pnpm-managed project
  *    -- always sets a bare `NODE` env var to the node binary path. Verified directly: without a
  *    workaround, a schema-content edit under `NODE` set is NEVER observed, even after 11+
- *    seconds, only a restart fixes it. `parseForESLintDefeatingNodeCacheBypass` in parse.ts
- *    neutralizes `process.env.NODE` around each synchronous `parseForESLint` call specifically to
- *    restore case 1's "no restart needed, ~10s latency" behavior even when `NODE` is set. See
- *    that function's doc comment for the details.
+ *    seconds, only a restart fixes it. Under `--lsp`, `parseForESLintWithCacheMode` deletes
+ *    `process.env.NODE` around each synchronous `parseForESLint` call specifically to restore
+ *    case 1's "no restart needed, ~10s latency" behavior even when `NODE` is set.
+ *
+ *    The one-shot CLI does the opposite on purpose: it forces `NODE` truthy so the schema and
+ *    sibling operations are loaded once per process, since nothing is edited mid-run. Points 1
+ *    and 2 therefore describe the language server only. See `parseForESLintWithCacheMode`'s doc
+ *    comment for how the two are told apart and how to override it.
  *
  * 3. Editing graphql.config.* itself so it points at a *different* schema file (its `schema`
  *    pointer changes, a `projects` entry is added/removed/renamed, or the config file is moved)

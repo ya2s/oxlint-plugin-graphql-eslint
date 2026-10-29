@@ -405,6 +405,18 @@ graphql-eslint's cache — see `src/adapter/config-watch.ts`'s module doc commen
 story, including why an unpatched setup running under `pnpm exec`/`pnpm run` would never see the
 edit at all.)
 
+The one-shot CLI (`oxlint` without `--lsp`) does not need that expiry, so it loads the schema and
+the graphql-config `documents` (sibling operations) once per process and reuses them for the whole
+run. On a large project this avoids re-reading every operation each time the 10-second cache
+expires mid-run. The plugin tells the two apart by `--lsp` in the `oxlint` process's arguments. If
+your launcher runs the language server without that flag, or you want to force either behaviour,
+set `OXLINT_GRAPHQL_ESLINT_CACHE`:
+
+| Value        | Behaviour                                                   |
+| ------------ | ----------------------------------------------------------- |
+| `ttl`        | Reload the schema and operations 10 seconds after each load |
+| `persistent` | Load them once per process                                  |
+
 **Editing *which file* `graphql.config.*` points at** (changing the `schema` pointer, adding or
 renaming a `projects` entry, or moving the config file) still requires restarting the language
 server. graphql-eslint keeps its own `GraphQLConfig` object as a process-lifetime singleton that

@@ -79,7 +79,10 @@ describe("parseDocuments in a long-lived process", () => {
   //
   // This test runs with `NODE` deliberately unset (see run-parse-staleness.ts), which is the
   // "clean" case. See the next test for the `NODE`-set case, which needs
-  // parse.ts's `parseForESLintDefeatingNodeCacheBypass` workaround to behave the same way.
+  // parse.ts's `parseForESLintWithCacheMode` to behave the same way.
+  //
+  // Both run the subprocess with `--lsp` in its argv (see run-parse-staleness.ts): a one-shot CLI
+  // run deliberately keeps the first schema for the whole process instead.
   it(
     "re-reads the schema after it changes, without a process restart",
     () => {
@@ -96,7 +99,7 @@ describe("parseDocuments in a long-lived process", () => {
 
   // `pnpm run <script>`/`pnpm exec` set a bare `NODE` env var to the node binary path, which
   // `esm/cache.js`'s `ModuleCache.get` treats as "never expire" (see
-  // parse.ts's `parseForESLintDefeatingNodeCacheBypass` doc comment for the exact upstream
+  // parse.ts's `parseForESLintWithCacheMode` doc comment for the exact upstream
   // expression). This simulates that launch path by forcing `NODE` to stay set for the whole
   // subprocess, and asserts the schema edit is STILL observed after the same 11s wait. Without
   // the workaround in parse.ts, this test fails (the cached schema is returned forever, so

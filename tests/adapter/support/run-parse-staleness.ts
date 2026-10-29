@@ -16,11 +16,13 @@ export type StalenessResult = { first: string[]; second: string[] };
  * the node binary path, and inherits it down through vitest into whatever `execFileSync` spawns
  * from inside a test. `@graphql-eslint/eslint-plugin`'s schema cache (esm/cache.js's
  * `ModuleCache.get`) has `if (process.env.NODE || process.hrtime(lastSeen)[0] < settings.lifetime)
- * return result;` -- so when `NODE` is set to any truthy string (regardless of its value), the
- * `10-second lifetime` on the right of `||` is never even evaluated: the cached schema would be
- * returned forever, no matter how much real time passes, WERE IT NOT for the workaround in
- * parse.ts's `parseForESLintDefeatingNodeCacheBypass` (see that function's doc comment), which
- * neutralizes `process.env.NODE` around each synchronous `parseForESLint` call.
+ * return result;` -- so when `NODE` is set to any truthy string, the cached schema would be
+ * returned forever, WERE IT NOT for parse.ts's `parseForESLintWithCacheMode`, which deletes
+ * `process.env.NODE` around each `parseForESLint` call in language-server mode.
+ *
+ * The runner is always passed `--lsp`, which is how parse.ts recognises the language server (see
+ * `parseForESLintWithCacheMode`). Without it the subprocess would be in one-shot CLI mode, where
+ * the schema is deliberately loaded once per process and the edit is never observed.
  *
  * By default (`nodeEnvValue` omitted) this deletes `NODE` from the spawned env entirely, so a
  * test's outcome reflects only `invalidateIfConfigChanged` (this package's own cache fix),
@@ -55,6 +57,7 @@ export function runParseStalenessScenario(input: {
       input.projectDir,
       input.schemaPath,
       String(input.waitMs),
+      "--lsp",
     ],
     { encoding: "utf8", env },
   );

@@ -13,7 +13,8 @@
  * conformance/env.ts for the same technique applied to a different graphql-eslint NODE_ENV
  * branch.
  *
- * Argv: `<projectDir> <schemaGraphqlPath> <waitMs>`. Performs, all within this one process (so
+ * Argv: `<projectDir> <schemaGraphqlPath> <waitMs> --lsp` (`--lsp` puts parse.ts in
+ * language-server cache mode; see run-parse-staleness.ts). Performs, all within this one process (so
  * module-level state persists across the two calls, as it would across two edits in a live
  * language server):
  *
