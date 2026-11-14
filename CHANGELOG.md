@@ -1,5 +1,11 @@
 # oxlint-plugin-graphql-eslint
 
+## 0.1.4
+
+### Patch Changes
+
+- 3c7cbf1: Diagnostics now keep the `messageId` (and `data`) graphql-eslint rules report with. oxlint resolves and interpolates them itself, so the rendered messages are unchanged, but oxlint's `RuleTester` can now assert on `messageId`/`data`. Also verified against oxlint 1.93.0.
+
 ## 0.1.3
 
 ### Patch Changes
