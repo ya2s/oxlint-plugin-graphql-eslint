@@ -45,7 +45,7 @@
     "release": "pnpm build && changeset publish"
   },
   "dependencies": {
-    "@oxlint/plugins": "^1.80.0",
+    "@oxlint/plugins": "^1.93.0",
     "esquery": "^1.7.0"
   },
   "peerDependencies": {
@@ -59,7 +59,7 @@
     "@types/node": "^22.13.0",
     "eslint": "^10.9.1",
     "graphql": "^16",
-    "oxlint": "^1.80.0",
+    "oxlint": "^1.93.0",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.0",
     "vitest": "^4.1.0"

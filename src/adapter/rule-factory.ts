@@ -35,9 +35,8 @@ export function toOxlintRule(ruleId: string, rule: GraphQLESLintRuleLike): Rule 
       // options at all ("Rule '<id>' does not accept options") — measured running no-root-type
       // (which requires a `disallow` option) through `oxlintrc.json`.
       schema: rule.meta.schema,
-      // Without forwarding `messages`, oxlint's own RuleTester rejects any `messageId` assertion
-      // against this rule ("Cannot use 'messageId' if rule under test doesn't define
-      // 'meta.messages'") — measured running RuleTester against no-anonymous-operations.
+      // oxlint resolves every forwarded `messageId` against this table (see runRuleOnDocument),
+      // so it must be forwarded for any report that uses one.
       messages: rule.meta.messages,
       docs: { description: rule.meta.docs?.description ?? ruleId },
     },
@@ -93,27 +92,19 @@ function runRuleOnDocument(input: {
     services: parsed.services,
   });
 
-  // Deliberately do NOT forward the original descriptor's `messageId` to `context.report()`
-  // here, even though oxlint's `Diagnostic` type allows `message` and `messageId` together.
-  // Measured: when a diagnostic carries `messageId`, oxlint's own engine re-derives the
-  // reported `message` from `meta.messages[messageId]` itself — and since we never also send a
-  // matching `data`, that comes back as the raw, un-interpolated template (e.g.
-  // `"{{ type }} \`{{ fieldName }}\` defined multiple times."`), silently discarding the
-  // already-correct, ESLint-exact interpolation `report-mapper.ts` computed. Reproduced on the
-  // real oxlint CLI (not just RuleTester) with no-duplicate-fields and no-deprecated. `message`
-  // alone is what real graphql-eslint/ESLint users and tooling see, so it must win.
+  // `message`/`messageId`/`data` are passed through exactly as the rule wrote them: oxlint
+  // resolves `messageId` against `meta.messages` (forwarded in `toOxlintRule` above) and
+  // interpolates `data` with the same `{{ key }}` placeholder syntax as ESLint's `interpolate`,
+  // so diagnostics keep their `messageId` and the rendered message matches ESLint's. Only the
+  // location and fix ranges need translating onto the host file.
   const report = createReportMapper({
     document: parsed.document,
-    messages: rule.meta.messages ?? {},
-    emit: (diagnostic) => {
+    emit: ({ fix, suggest, ...diagnostic }) => {
       context.report({
-        message: diagnostic.message,
-        loc: diagnostic.loc,
-        ...(diagnostic.fix ? { fix: () => diagnostic.fix!() } : {}),
-        ...(diagnostic.suggest
-          ? { suggest: diagnostic.suggest.map((s) => ({ desc: s.desc, fix: () => s.fix() })) }
-          : {}),
-      });
+        ...diagnostic,
+        ...(fix ? { fix: () => fix() } : {}),
+        ...(suggest ? { suggest: suggest.map((s) => ({ ...s, fix: () => s.fix() })) } : {}),
+      } as Parameters<Context["report"]>[0]);
     },
   });
 

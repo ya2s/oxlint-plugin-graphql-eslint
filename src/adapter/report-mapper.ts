@@ -21,23 +21,28 @@ export type GqlPoint = { line: number; column: number };
 
 export type GqlLocRange = { start: GqlPoint; end?: GqlPoint };
 
-export type GqlReportDescriptor = {
+/** The message-carrying fields of a report descriptor or suggestion, exactly as a rule wrote them.
+ *  Forwarded to oxlint untouched: oxlint resolves `messageId` against the rule's `meta.messages`
+ *  and interpolates `data` itself, with the same `{{ key }}` syntax ESLint uses. */
+export type MessageFields = {
+  message?: string;
+  messageId?: string;
+  data?: Record<string, unknown>;
+};
+
+export type GqlReportDescriptor = MessageFields & {
   node?: GqlNode;
   /** Either a full `{ start, end? }` range or a bare `{ line, column }` point — real
    *  graphql-eslint rules use both (see `normalizeLoc` below). */
   loc?: GqlLocRange | GqlPoint;
-  message?: string;
-  messageId?: string;
-  data?: Record<string, unknown>;
   fix?: FixFn;
-  suggest?: Array<{ desc?: string; messageId?: string; data?: Record<string, unknown>; fix: FixFn }>;
+  suggest?: Array<Omit<MessageFields, "message"> & { desc?: string; fix: FixFn }>;
 };
 
-export type MappedDiagnostic = {
-  message: string;
+export type MappedDiagnostic = MessageFields & {
   loc: { start: { line: number; column: number }; end?: { line: number; column: number } };
   fix?: () => FixLike[];
-  suggest?: Array<{ desc: string; fix: () => FixLike[] }>;
+  suggest?: Array<Omit<MessageFields, "message"> & { desc?: string; fix: () => FixLike[] }>;
 };
 
 const FIXER: FixerShim = {
@@ -53,10 +58,9 @@ const FIXER: FixerShim = {
 
 export function createReportMapper(options: {
   document: EmbeddedDocument;
-  messages: Record<string, string>;
   emit: (diagnostic: MappedDiagnostic) => void;
 }): (descriptor: GqlReportDescriptor) => void {
-  const { document, messages, emit } = options;
+  const { document, emit } = options;
 
   return (descriptor) => {
     const rawLoc = descriptor.loc ?? descriptor.node?.loc;
@@ -64,7 +68,7 @@ export function createReportMapper(options: {
     const loc = normalizeLoc(rawLoc);
 
     const diagnostic: MappedDiagnostic = {
-      message: resolveMessage(descriptor.message, descriptor.messageId, descriptor.data, messages),
+      ...messageFieldsOf(descriptor),
       loc: {
         start: { line: loc.start.line + document.lineOffset, column: loc.start.column },
         ...(loc.end
@@ -80,7 +84,7 @@ export function createReportMapper(options: {
 
     if (descriptor.suggest && descriptor.suggest.length > 0) {
       diagnostic.suggest = descriptor.suggest.map((suggestion) => ({
-        desc: resolveMessage(suggestion.desc, suggestion.messageId, suggestion.data, messages),
+        ...messageFieldsOf(suggestion),
         fix: () => shiftFixes(suggestion.fix, document),
       }));
     }
@@ -146,30 +150,18 @@ function isFix(value: FixLike | FixLike[] | Iterable<FixLike>): value is FixLike
   return !Array.isArray(value) && typeof (value as FixLike).text === "string";
 }
 
-function resolveMessage(
-  message: string | undefined,
-  messageId: string | undefined,
-  data: Record<string, unknown> | undefined,
-  messages: Record<string, string>,
-): string {
-  const template = message ?? (messageId ? messages[messageId] : undefined);
-  if (template === undefined) {
-    throw new Error(`cannot resolve message for messageId ${String(messageId)}`);
-  }
-  return interpolate(template, data);
-}
-
 /**
- * Mirrors ESLint's own `interpolate` (node_modules/eslint/lib/linter/interpolate.js) exactly:
- * the placeholder body may be any run of characters other than `{`/`}` (not just a bareword),
- * it is trimmed before being looked up in `data`, and a name absent from `data` is left
- * completely untouched — braces included — rather than being dropped or replaced with anything
- * else.
+ * Copies only the message fields a descriptor actually has, so an absent one stays absent rather
+ * than becoming an explicit `undefined` key (oxlint checks `Object.hasOwn` for `messageId` and
+ * `data`).
  */
-function interpolate(text: string, data: Record<string, unknown> | undefined): string {
-  if (!data) return text;
-  return text.replace(/\{\{([^{}]+)\}\}/gu, (fullMatch, termWithWhitespace: string) => {
-    const term = termWithWhitespace.trim();
-    return term in data ? String(data[term]) : fullMatch;
-  });
+type ForwardedMessageFields = MessageFields & { desc?: string };
+
+function messageFieldsOf(descriptor: ForwardedMessageFields): ForwardedMessageFields {
+  const fields: ForwardedMessageFields = {};
+  if (descriptor.message !== undefined) fields.message = descriptor.message;
+  if (descriptor.desc !== undefined) fields.desc = descriptor.desc;
+  if (descriptor.messageId !== undefined) fields.messageId = descriptor.messageId;
+  if (descriptor.data !== undefined) fields.data = descriptor.data;
+  return fields;
 }

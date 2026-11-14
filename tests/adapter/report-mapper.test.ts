@@ -18,7 +18,7 @@ const node: GqlNode = {
 describe("createReportMapper", () => {
   it("shifts lines by the document's line offset and leaves columns alone", () => {
     const emit = vi.fn();
-    const report = createReportMapper({ document, messages: {}, emit });
+    const report = createReportMapper({ document, emit });
 
     report({ node, message: "boom" });
 
@@ -30,22 +30,23 @@ describe("createReportMapper", () => {
     );
   });
 
-  it("resolves messageId and interpolates data", () => {
+  // oxlint itself resolves `messageId` and interpolates `data`, so they must reach it untouched
+  // (and an absent field must stay absent, not become an explicit `undefined` key).
+  it("passes messageId and data through untouched", () => {
     const emit = vi.fn();
-    const report = createReportMapper({
-      document,
-      messages: { named: "Field {{ name }} is bad" },
-      emit,
-    });
+    const report = createReportMapper({ document, emit });
 
     report({ node, messageId: "named", data: { name: "id" } });
 
-    expect(emit.mock.calls[0]![0].message).toBe("Field id is bad");
+    const diagnostic = emit.mock.calls[0]![0];
+    expect(diagnostic.messageId).toBe("named");
+    expect(diagnostic.data).toEqual({ name: "id" });
+    expect(Object.hasOwn(diagnostic, "message")).toBe(false);
   });
 
   it("shifts fix ranges by the document's character offset", () => {
     const emit = vi.fn();
-    const report = createReportMapper({ document, messages: {}, emit });
+    const report = createReportMapper({ document, emit });
 
     report({ node, message: "boom", fix: (fixer) => fixer.replaceText(node, "name") });
 
@@ -54,7 +55,7 @@ describe("createReportMapper", () => {
 
   it("shifts suggestion fix ranges too", () => {
     const emit = vi.fn();
-    const report = createReportMapper({ document, messages: { s: "use {{ x }}" }, emit });
+    const report = createReportMapper({ document, emit });
 
     report({
       node,
@@ -63,13 +64,15 @@ describe("createReportMapper", () => {
     });
 
     const suggestion = emit.mock.calls[0]![0].suggest![0]!;
-    expect(suggestion.desc).toBe("use name");
+    expect(suggestion.messageId).toBe("s");
+    expect(suggestion.data).toEqual({ x: "name" });
+    expect(Object.hasOwn(suggestion, "desc")).toBe(false);
     expect(suggestion.fix()).toEqual([{ range: [15, 16], text: "" }]);
   });
 
   it("accepts a descriptor with loc instead of node", () => {
     const emit = vi.fn();
-    const report = createReportMapper({ document, messages: {}, emit });
+    const report = createReportMapper({ document, emit });
 
     report({ loc: { start: { line: 1, column: 0 } }, message: "boom" });
 
@@ -84,7 +87,7 @@ describe("createReportMapper", () => {
   // this: `descriptor.loc.start ? descriptor.loc : { start: descriptor.loc, end: null }`.
   it("accepts a bare { line, column } point as loc, matching real graphql-eslint call sites", () => {
     const emit = vi.fn();
-    const report = createReportMapper({ document, messages: {}, emit });
+    const report = createReportMapper({ document, emit });
 
     report({ loc: { line: 1, column: 0 }, message: "boom" });
 
@@ -100,7 +103,7 @@ describe("createReportMapper", () => {
   it("merges multiple fixes from one report into a single fix, like ESLint's mergeFixes", () => {
     const emit = vi.fn();
     // document.text = "{ id }" -> indices: { =0, space=1, i=2, d=3, space=4, }=5
-    const report = createReportMapper({ document, messages: {}, emit });
+    const report = createReportMapper({ document, emit });
 
     report({
       node,
@@ -121,7 +124,7 @@ describe("createReportMapper", () => {
 
   it("throws when a report yields overlapping fixes, matching ESLint's mergeFixes assertion", () => {
     const emit = vi.fn();
-    const report = createReportMapper({ document, messages: {}, emit });
+    const report = createReportMapper({ document, emit });
 
     report({
       node,
@@ -133,20 +136,5 @@ describe("createReportMapper", () => {
     });
 
     expect(() => emit.mock.calls[0]![0].fix!()).toThrow(/overlap/);
-  });
-
-  // ESLint's interpolate (node_modules/eslint/lib/linter/interpolate.js) leaves a placeholder
-  // with no matching data key completely untouched, braces included.
-  it("leaves a placeholder untouched when data has no matching key", () => {
-    const emit = vi.fn();
-    const report = createReportMapper({
-      document,
-      messages: { m: "Field {{ name }} is {{ other }}" },
-      emit,
-    });
-
-    report({ node, messageId: "m", data: { name: "id" } });
-
-    expect(emit.mock.calls[0]![0].message).toBe("Field id is {{ other }}");
   });
 });
