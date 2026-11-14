@@ -12,7 +12,7 @@ All 64 upstream rules are exposed, as `graphql/<same-name>` (e.g.
 rule this plugin adds itself, `graphql/parse-error` (see [Behavioural
 differences](#behavioural-differences-from-eslint) below) — 65 rules in total.
 
-**Verified against:** oxlint `1.80.0`, `@graphql-eslint/eslint-plugin` `4.4.1`, `graphql` `16.14.2`,
+**Verified against:** oxlint `1.93.0`, `@graphql-eslint/eslint-plugin` `4.4.1`, `graphql` `16.14.2`,
 Node `26.7.0` (this package's own `engines.node` requirement is `>=22.13.0`). Every command and
 config example in this README was run for real while writing it — see
 [Conformance](#conformance) for how the rule behaviour itself is checked against upstream.
@@ -359,12 +359,6 @@ This is exercised end to end in this package's own test suite
   may leave some of them unapplied — run it again (or a couple more times) to converge, the same
   way you'd re-run `oxlint --fix` for any other plugin with overlapping fixes.
 
-- **Diagnostics never carry a `messageId`.** oxlint re-derives each message from the rule's
-  `meta.messages` table; keeping the original `messageId` around would mean showing the
-  un-interpolated template instead of the real message, so it's dropped. This means oxlint's
-  `RuleTester` `messageId`-assertion style can't be used against these rules — assert on the
-  rendered `message` text instead.
-
 - **An unloadable schema aborts the file; ESLint reports it as one normal diagnostic.** If
   graphql-config's `schema` points at a file that doesn't exist (or otherwise fails to load),
   graphql-eslint's own parser throws a plain, position-less `Error` — deliberately, per this
@@ -508,7 +502,7 @@ Run it yourself: `pnpm test:conformance` (builds the package first, then runs th
   Forced past that with `--legacy-peer-deps`, graphql-eslint's parser does still work against
   `graphql@17` in a basic probe — so the constraint is upstream's declaration, not a known
   incompatibility, and this peer range widens to `^16 || ^17` as soon as graphql-eslint supports it.
-- `oxlint` itself (not a declared peer — bring your own; verified against `1.80.0`)
+- `oxlint` itself (not a declared peer — bring your own; verified against `1.93.0`)
 
 `esquery` is a regular runtime dependency (not bundled into the published output) — graphql-eslint
 rules register their visitors using ESLint's own esquery selector syntax, and this plugin needs
